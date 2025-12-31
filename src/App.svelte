@@ -30,6 +30,8 @@
       }
   }
 
+  let isMyTurn = $derived(game.currentTurnUid === game.me.uid);
+
   // 点击“出牌”按钮
   function handleUseCardBtn() {
       if (selectedIds.size === 0) return;
@@ -71,6 +73,8 @@
   function cancelTargeting() {
       isTargetingMode = false;
   }
+
+  
 </script>
 
 <main>
@@ -86,6 +90,13 @@
   {:else}
     <div class="battle-container">
         <div class="arena">
+          <div class="turn-indicator" class:my-turn={isMyTurn}>
+            {#if isMyTurn}
+                🟢 你的回合
+            {:else}
+                🔴 敌方行动中...
+            {/if}
+        </div>
             <div class="enemies-row">
                 {#each game.players.filter(p => p !== game.me) as enemy}
                     <div 
@@ -108,7 +119,7 @@
                 {/if}
             </div>
 
-            <div class="my-zone">
+            <div class="my-zone" class:active={isMyTurn}>
                 <div class="player-header">
                     <div onclick={() => handlePlayerClick(game.me.uid)} role="button" tabindex="0">
                         <PlayerAvatar player={game.me} />
@@ -138,15 +149,22 @@
                 </div>
 
                 <div class="controls">
-                    <button onclick={() => game.me.drawCard()}>摸牌</button>
-                    <button 
-                        class="use-btn"
-                        disabled={selectedIds.size === 0}
-                        onclick={handleUseCardBtn}
-                    >
-                        {isTargetingMode ? '选择目标中...' : '出牌'}
-                    </button>
-                </div>
+                <button 
+                    class="use-btn"
+                    disabled={!isMyTurn || selectedIds.size === 0} 
+                    onclick={handleUseCardBtn}
+                >
+                    {isTargetingMode ? '选择目标...' : '出牌'}
+                </button>
+
+                <button 
+                    class="end-btn"
+                    disabled={!isMyTurn}
+                    onclick={() => game.nextTurn()}
+                >
+                    结束回合
+                </button>
+             </div>
             </div>
         </div>
 
@@ -222,4 +240,26 @@
     background: rgba(0,0,0,0.1); /* 给个背景色方便调试 */
     border-radius: 8px;
 }
+.turn-indicator {
+        text-align: center;
+        padding: 5px;
+        background: #333;
+        color: #fff;
+        border-radius: 4px;
+        margin-bottom: 10px;
+        font-weight: bold;
+    }
+    .turn-indicator.my-turn { background: #4DB873; } /* 绿色 */
+
+    /* 我的区域激活状态 */
+    .my-zone { transition: box-shadow 0.3s; }
+    .my-zone.active { box-shadow: 0 0 15px rgba(77, 184, 115, 0.3); border: 1px solid #4DB873; }
+
+    .end-btn {
+        background: #333;
+        color: white;
+        margin-left: auto; /* 把按钮推到最右边 */
+    }
+    .end-btn:hover { background: #555; }
+    .end-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>
