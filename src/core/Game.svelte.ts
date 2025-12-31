@@ -6,12 +6,22 @@ import { logger } from "./Logger.svelte";
 // 简单的延时函数，让AI操作看起来像真人在思考
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// 定义一个交互请求的结构
+interface CardRequest {
+  playerId: string; // 谁需要操作
+  cardName: string; // 需要出什么牌 (比如 "闪")
+  resolve: (result: boolean) => void; // 也就是 Promise 的 resolve
+}
+
 export class Game {
   // 玩家列表
   players = $state<Player[]>([]);
 
   // 当前操作的玩家索引
   currentTurnUid = $state("");
+
+  // 新增：当前的交互请求
+  pendingRequest = $state<CardRequest | null>(null);
 
   // 谁是主视角（就是屏幕前的你）
   // $derived: 假设第一个玩家总是“我”
@@ -86,20 +96,9 @@ export class Game {
     const target = this.me; // 目标永远是我
 
     if (killCard) {
-      logger.add(
-        logger.player(ai),
-        " 对 ",
-        logger.player(target),
-        " 使用了 ",
-        logger.card("杀")
-      );
-
-      // 简单的出牌动画感
-      await sleep(500);
-      target.damage(1);
-
-      // 弃牌
-      ai.hand = ai.hand.filter((c) => c.id !== killCard.id);
+      // 这样 AI 也会触发 askForCard，从而激活你的 UI 响应窗口
+      console.log("AI 决定出杀...");
+      await this.useCard(killCard.id, target.uid);
     } else {
       logger.add(logger.player(ai), " 微微一笑，没有出牌");
     }
@@ -114,26 +113,25 @@ export class Game {
    * @param cardId 使用的卡牌ID
    * @param targetId 目标的ID (如果是杀，必须有目标)
    */
-  useCard(cardId: string, targetId?: string) {
+  async useCard(cardId: string, targetId?: string) {
     const user = this.currentTurnPlayer;
     if (!user) return;
-    const cardIdx = user.hand.findIndex((c) => c.id === cardId);
-    if (cardIdx === -1) return;
 
-    const card = user.hand[cardIdx];
+    // ... 找牌逻辑 ...
+    const card = user.hand.find((c) => c.id === cardId);
+    if (!card) return;
 
-    // 寻找目标对象
+    // ... 找目标逻辑 ...
     let target: Player | undefined;
-    if (targetId) {
-      target = this.players.find((p) => p.uid === targetId);
-    }
+    if (targetId) target = this.players.find((p) => p.uid === targetId);
 
-    // --- 简单的规则判断 ---
+    // 弃牌 (先扣牌，再结算效果)
+    user.hand = user.hand.filter((c) => c.id !== cardId);
+
+    // --- 逻辑分支 ---
     if (card.name === "杀") {
-      if (!target) {
-        logger.add("错误：使用【杀】必须指定目标！");
-        return;
-      }
+      if (!target) return;
+
       logger.add(
         logger.player(user),
         " 对 ",
@@ -142,16 +140,88 @@ export class Game {
         logger.card(card.name)
       );
 
-      // 造成伤害 (触发 Hook)
-      target.damage(1);
+      // 🌟 关键点：异步询问目标是否出闪 🌟
+      // 只有当 askForCard 返回 false (没出闪) 时，才造成伤害
+      const hasShan = await this.askForCard(target, "闪");
+
+      if (hasShan) {
+        logger.add(logger.card("杀"), " 被抵消了");
+      } else {
+        target.damage(1);
+      }
     } else if (card.name === "桃") {
-      // 桃只能对自己用 (简化版规则)
-      logger.add(logger.player(user), " 吃了一个 ", logger.card(card.name));
+      // ... 桃的逻辑 ...
       user.health.recover(1);
+      logger.add(logger.player(user), " 吃了一个 ", logger.card("桃"));
     }
 
-    // 弃牌
-    user.hand.splice(cardIdx, 1);
+    // 告诉 UI 刷新一下选中状态 (可选)
+  }
+
+  // --- 核心交互方法 ---
+
+  /**
+   * 询问某人打出一张牌
+   * @param player 询问的对象
+   * @param cardName 需要打出的牌名
+   * @returns Promise<boolean> true=打出了, false=取消/没打
+   */
+  async askForCard(player: Player, cardName: string): Promise<boolean> {
+    logger.add(`等待 [${player.name}] 打出 【${cardName}】...`);
+
+    // 1. 如果是 AI，直接由 AI 决定 (目前简写为：有就出)
+    if (player !== this.me) {
+      await new Promise((r) => setTimeout(r, 1000)); // 假装思考
+      const card = player.hand.find((c) => c.name === cardName);
+      if (card) {
+        // AI 出牌
+        player.hand = player.hand.filter((c) => c.id !== card.id);
+        logger.add(logger.player(player), " 打出了 ", logger.card(cardName));
+        return true;
+      } else {
+        return false;
+      }
+    }
+
+    // 2. 如果是玩家，挂起 Promise，等待 UI 响应
+    return new Promise<boolean>((resolve) => {
+      this.pendingRequest = {
+        playerId: player.uid,
+        cardName: cardName,
+        // 这里封装一下 resolve，处理完后顺便清理状态
+        resolve: (result) => {
+          this.pendingRequest = null;
+          resolve(result);
+        },
+      };
+    });
+  }
+
+  /**
+   * 玩家在 UI 上点击了响应
+   * @param cardId 选中的卡牌ID (如果为空表示点击了取消)
+   */
+  respondCard(cardId?: string) {
+    if (!this.pendingRequest) return;
+
+    const player = this.me; // 肯定是玩家在操作
+
+    if (cardId) {
+      // 校验牌对不对
+      const card = player.hand.find((c) => c.id === cardId);
+      if (card && card.name === this.pendingRequest.cardName) {
+        // 扣掉这张牌
+        player.hand = player.hand.filter((c) => c.id !== cardId);
+        logger.add(logger.player(player), " 打出了 ", logger.card(card.name));
+        // 完成 Promise，返回 true
+        this.pendingRequest.resolve(true);
+        return;
+      }
+    }
+
+    // 选择了取消，或卡牌不对
+    logger.add(logger.player(player), " 选择不打出");
+    this.pendingRequest.resolve(false);
   }
 }
 

@@ -18,6 +18,15 @@
   // 新增：是否处于“选择目标”状态
   let isTargetingMode = $state(false);
 
+  // 判断当前是否是“询问状态”
+  let isAsking = $derived(!!game.pendingRequest);
+  
+  // 询问的文字提示
+  let askingText = $derived(isAsking 
+    ? `请打出一张【${game.pendingRequest?.cardName}】以响应` 
+    : ''
+  );
+
   // 选将开始游戏
   function startGame(myCharId: string) {
       const myDef = modManager.getCharacter(myCharId);
@@ -33,24 +42,44 @@
   let isMyTurn = $derived(game.currentTurnUid === game.me.uid);
 
   // 点击“出牌”按钮
-  function handleUseCardBtn() {
+  async function handleUseCardBtn() {
+
+    // 如果正在被询问，禁止主动出牌
+      if (isAsking) return;
+
+
       if (selectedIds.size === 0) return;
-      
       const cardId = Array.from(selectedIds)[0];
       const card = game.me.hand.find(c => c.id === cardId);
       
-      if (!card) return;
-
-      // 如果是【杀】，进入目标选择模式
-      if (card.name === '杀') {
-          isTargetingMode = true; // <--- 开启选择模式
-          console.log("请选择目标...");
+      if (card?.name === '杀') {
+         isTargetingMode = true;
       } else {
-          // 其他牌直接用
-          game.useCard(card.id);
-          selectedIds.clear();
-          selectedIds = new Set(selectedIds); // 触发更新
+         // 注意：useCard 现在是 async 的，如果你不在意返回值，可以不加 await
+         await game.useCard(cardId);
+         selectedIds.clear();
+         selectedIds = new Set(selectedIds);
       }
+  }
+
+  // --- 新增：处理响应阶段的手牌点击 ---
+  function handleCardClick(card: CardDef) {
+      // 1. 如果是“响应模式” (比如正在求闪)
+      if (isAsking) {
+          // 只有选对了牌才触发
+          if (card.name === game.pendingRequest?.cardName) {
+              game.respondCard(card.id);
+          } else {
+              // 选错了可以提示一下，或者不做反应
+              console.log("这张牌无法响应");
+          }
+          return;
+      }
+
+      // 2. 否则是“正常选牌模式” (原有逻辑)
+      if (selectedIds.has(card.id)) selectedIds.delete(card.id);
+      else { selectedIds.clear(); selectedIds.add(card.id); }
+      selectedIds = new Set(selectedIds);
   }
 
   // 点击某个玩家头像 (作为目标)
@@ -119,7 +148,7 @@
                 {/if}
             </div>
 
-            <div class="my-zone" class:active={isMyTurn}>
+            <div class="my-zone" class:active={isMyTurn} class:asking={isAsking}>
                 <div class="player-header">
                     <div onclick={() => handlePlayerClick(game.me.uid)} role="button" tabindex="0">
                         <PlayerAvatar player={game.me} />
@@ -137,33 +166,23 @@
                         <Card 
                           {card} 
                           selected={selectedIds.has(card.id)}
-                          onclick={() => {
-                              // 选牌逻辑 (同之前)
-                              if (selectedIds.has(card.id)) selectedIds.delete(card.id);
-                              else { selectedIds.clear(); selectedIds.add(card.id); }
-                              selectedIds = new Set(selectedIds);
-                          }}
+                          onclick={() => handleCardClick(card)}
                         />
                       {/each}
                     </div>
                 </div>
 
                 <div class="controls">
-                <button 
-                    class="use-btn"
-                    disabled={!isMyTurn || selectedIds.size === 0} 
-                    onclick={handleUseCardBtn}
-                >
-                    {isTargetingMode ? '选择目标...' : '出牌'}
-                </button>
-
-                <button 
-                    class="end-btn"
-                    disabled={!isMyTurn}
-                    onclick={() => game.nextTurn()}
-                >
-                    结束回合
-                </button>
+                {#if isAsking}
+                    <div class="ask-prompt">{askingText}</div>
+                    <button class="cancel-btn" onclick={() => game.respondCard(undefined)}>
+                        取消 / 不出
+                    </button>
+                 {:else}
+                    <button onclick={() => game.me.drawCard()}>摸牌</button>
+                    <button class="use-btn" onclick={handleUseCardBtn}>出牌</button>
+                    <button class="end-btn" onclick={() => game.nextTurn()}>结束回合</button>
+                 {/if}
              </div>
             </div>
         </div>
@@ -262,4 +281,23 @@
     }
     .end-btn:hover { background: #555; }
     .end-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* 询问模式下的醒目样式 */
+    .my-zone.asking {
+        box-shadow: 0 0 20px #FFD700; /* 金色光环 */
+        border: 2px solid #FFD700;
+        animation: flash 1s infinite alternate;
+    }
+    
+    .ask-prompt {
+        color: #FFD700;
+        font-weight: bold;
+        font-size: 1.2em;
+        margin-right: 10px;
+    }
+
+    @keyframes flash {
+        from { background-color: rgba(255, 215, 0, 0.1); }
+        to { background-color: rgba(255, 215, 0, 0.2); }
+    }
 </style>
