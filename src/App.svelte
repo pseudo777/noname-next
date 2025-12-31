@@ -5,6 +5,8 @@
   import PlayerAvatar from './components/PlayerAvatar.svelte';
   import Card from './components/Card.svelte';
   import type { CardDef } from '@core/types/api';
+  import GameLog from './components/GameLog.svelte';
+  import { logger } from '@core/Logger.svelte';
   
   // 1. 游戏启动时，注册 Mod
   // 在真实引擎中，这会在 main.ts 或 boot.ts 里执行
@@ -50,8 +52,14 @@
     // 1. 找到被选中的牌
     const cardsToUse = currentPlayer!.hand.filter(c => selectedIds.has(c.id));
     const card = cardsToUse[0]; // 暂时只处理一张
+    // --- 记录日志 ---
+    logger.add(
+        logger.player(currentPlayer!), 
+        " 使用了 ", 
+        logger.card(card.name)
+    );
 
-    console.log(`[Game] 玩家使用了卡牌: ${card.name}`);
+    // console.log(`[Game] 玩家使用了卡牌: ${card.name}`);
 
     // 2. 简单的卡牌效果模拟 (实际应该走 CardLogic 模块)
     if (card.name === '桃') {
@@ -88,6 +96,7 @@
     </div>
   
   {:else}
+  <div class="battle-container">
     <div class="arena">
       <button class="back-btn" onclick={() => currentPlayer = null}>← 返回选将</button>
       
@@ -137,6 +146,13 @@
           </button>
       </div>
       </div>
+    </div>
+    <div class="sidebar">
+            <h3>战斗记录</h3>
+            <div class="log-wrapper">
+                <GameLog />
+            </div>
+        </div>
     </div>
   {/if}
 </main>
@@ -200,4 +216,37 @@
       background: #ccc;
       cursor: not-allowed;
   }
+
+  .battle-container {
+      display: flex;
+      gap: 20px;
+      width: 100%;
+      max-width: 900px; /* 稍微加宽一点 */
+      height: 600px;
+  }
+
+  .arena {
+      flex: 2; /* 战场占 2/3 */
+      /* 这里的样式可以沿用之前的 .arena 样式，或者稍微调整 */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+  }
+
+  .sidebar {
+      flex: 1; /* 日志占 1/3 */
+      display: flex;
+      flex-direction: column;
+      background: #222;
+      padding: 10px;
+      border-radius: 8px;
+      color: white;
+  }
+  
+  .log-wrapper {
+      flex: 1; /* 填满剩余高度 */
+      overflow: hidden;
+  }
+
+  h3 { margin: 0 0 10px 0; border-bottom: 1px solid #555; padding-bottom: 5px; }
 </style>

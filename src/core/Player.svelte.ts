@@ -2,6 +2,7 @@
 import { Health } from "./modules/Health.svelte";
 import type { CharacterDef, DamageContext, CardDef, Suit } from "./types/api";
 import { modManager } from "./ModManager";
+import { logger } from "./Logger.svelte";
 
 export class Player {
   id: string;
@@ -66,8 +67,14 @@ export class Player {
     // 3. 结算最终数值
     if (ctx.amount > 0) {
       this.health.damage(ctx.amount);
+      logger.add(
+        logger.player(this),
+        " 受到了 ",
+        { text: `${ctx.amount}点`, type: "damage" },
+        " 伤害"
+      );
     } else {
-      console.log(`[Engine] 伤害被完全抵消了！`);
+      logger.add(logger.player(this), " 的伤害被防止了");
     }
   }
 

@@ -1,5 +1,6 @@
 // src/mods/standard/index.ts
 import type { ModManifest, DamageContext } from "@core/types/api";
+import { logger } from "@core/Logger.svelte";
 
 export const StandardPack: ModManifest = {
   id: "standard_pack",
@@ -15,6 +16,7 @@ export const StandardPack: ModManifest = {
         onBeforeDamage: (ctx: DamageContext) => {
           ctx.amount -= 1;
           if (ctx.amount < 0) ctx.amount = 0;
+          logger.add(logger.skill("铁壁"), " 触发，抵消了 1 点伤害");
         },
       },
     },
