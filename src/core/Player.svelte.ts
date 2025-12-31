@@ -1,6 +1,6 @@
 // src/core/Player.svelte.ts
 import { Health } from "./modules/Health.svelte";
-import type { CharacterDef, DamageContext } from "./types/api";
+import type { CharacterDef, DamageContext, CardDef, Suit } from "./types/api";
 import { modManager } from "./ModManager";
 
 export class Player {
@@ -8,7 +8,7 @@ export class Player {
   name = $state("");
   country = $state("");
   health: Health;
-  hand = $state<string[]>([]);
+  hand = $state<CardDef[]>([]);
 
   // 存储当前武将拥有的技能对象
   skills = $state<any[]>([]);
@@ -71,10 +71,18 @@ export class Player {
     }
   }
 
-  // ... drawCard 等保持不变 ...
   drawCard() {
-    // ...
-    const cards = ["杀", "闪", "桃", "酒"];
-    this.hand.push(cards[Math.floor(Math.random() * cards.length)]);
+    const names = ["杀", "闪", "桃", "酒"];
+    const suits: Suit[] = ["spade", "heart", "club", "diamond"];
+
+    const newCard: CardDef = {
+      id: Math.random().toString(36).slice(2), // 临时随机ID
+      name: names[Math.floor(Math.random() * names.length)],
+      suit: suits[Math.floor(Math.random() * suits.length)],
+      point: Math.floor(Math.random() * 13) + 1,
+      type: "basic",
+    };
+
+    this.hand.push(newCard);
   }
 }

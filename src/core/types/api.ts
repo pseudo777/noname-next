@@ -44,3 +44,15 @@ export interface ModManifest {
   characters: CharacterDef[];
   skills?: SkillDef[]; // 新增: 包含的技能
 }
+
+export type Suit = "spade" | "heart" | "club" | "diamond"; // 黑桃 红桃 梅花 方片
+
+export interface CardDef {
+  id: string; // 唯一ID (用于逻辑判等)
+  name: string; // 显示名称 "杀"
+  suit: Suit; // 花色
+  point: number; // 点数 1-13
+  type: "basic" | "trick" | "equip"; // 基本/锦囊/装备
+
+  // 后面我们会在这里加 hooks，比如 onUse
+}
