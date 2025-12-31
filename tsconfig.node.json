@@ -1,0 +1,32 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "types": ["node"],
+    "skipLibCheck": true,
+
+    /* Bundler mode */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    // --- 修改开始 ---
+    "noEmit": false, // 允许输出
+    "emitDeclarationOnly": true, // 但只输出类型定义，不输出 JS 代码
+    "declaration": true, // 开启类型定义输出
+    "outDir": "dist/types", // 输出到这个目录，避免污染 src
+    // --- 修改结束 ---
+    /* Linting */
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedSideEffectImports": true,
+
+    "composite": true
+  },
+  "include": ["vite.config.ts"]
+}
