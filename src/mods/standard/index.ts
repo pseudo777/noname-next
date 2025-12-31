@@ -31,8 +31,8 @@ export const StandardPack: ModManifest = {
       country: "wei",
       skills: ["tiebi"], // <--- 关联技能
     },
-    { id: "liubei", name: "刘备", maxHp: 4, country: "shu" },
+    { id: "liubei", name: "刘备", maxHp: 1, country: "shu" },
     { id: "sunquan", name: "孙权", maxHp: 4, country: "wu" },
-    { id: "lvbu", name: "吕布", maxHp: 5, country: "qun" },
+    { id: "lvbu", name: "吕布", maxHp: 1, country: "qun" },
   ],
 };

@@ -103,10 +103,26 @@
       isTargetingMode = false;
   }
 
+
+  let winner = $derived(game.winner);
+    
+    function restart() {
+        window.location.reload(); // 最简单的重开：刷新页面
+    }
+
   
 </script>
 
 <main>
+    {#if winner}
+        <div class="game-over-modal">
+            <div class="modal-content">
+                <h1>游戏结束</h1>
+                <p class="winner-text">获胜者: {winner}</p>
+                <button onclick={restart}>再来一局</button>
+            </div>
+        </div>
+    {/if}
   {#if isSelectingChar}
     <div class="lobby">
         <h2>请选择你的武将:</h2>
@@ -300,4 +316,20 @@
         from { background-color: rgba(255, 215, 0, 0.1); }
         to { background-color: rgba(255, 215, 0, 0.2); }
     }
+    .game-over-modal {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.85);
+        display: flex; justify-content: center; align-items: center;
+        z-index: 100;
+        animation: fadeIn 0.5s;
+    }
+    .modal-content {
+        background: white; padding: 40px; border-radius: 10px; text-align: center;
+        box-shadow: 0 0 30px rgba(255, 215, 0, 0.5);
+    }
+    h1 { margin: 0; font-size: 3em; color: #333; }
+    .winner-text { font-size: 2em; color: #D03B31; font-weight: bold; margin: 20px 0; }
+    button { padding: 10px 30px; font-size: 1.2em; cursor: pointer; }
+    
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>

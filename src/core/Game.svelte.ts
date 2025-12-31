@@ -16,6 +16,7 @@ interface CardRequest {
 export class Game {
   // 玩家列表
   players = $state<Player[]>([]);
+  winner = $state<string | null>(null); // 新增：胜利者
 
   // 当前操作的玩家索引
   currentTurnUid = $state("");
@@ -147,7 +148,7 @@ export class Game {
       if (hasShan) {
         logger.add(logger.card("杀"), " 被抵消了");
       } else {
-        target.damage(1);
+        await target.damage(1);
       }
     } else if (card.name === "桃") {
       // ... 桃的逻辑 ...
@@ -222,6 +223,52 @@ export class Game {
     // 选择了取消，或卡牌不对
     logger.add(logger.player(player), " 选择不打出");
     this.pendingRequest.resolve(false);
+  }
+
+  /**
+   * 处理濒死逻辑
+   * @param dyingPlayer 濒死的角色
+   * @returns boolean 是否被救活
+   */
+  async handleDying(dyingPlayer: Player): Promise<boolean> {
+    logger.add(logger.player(dyingPlayer), " 进入濒死状态！");
+
+    // 简单逻辑：只询问濒死者自己是否有桃 (完整版需要询问全场)
+    // 循环询问，直到体力 > 0 或者没桃了/放弃了
+    while (dyingPlayer.health.current <= 0) {
+      const hasPeach = await this.askForCard(dyingPlayer, "桃");
+
+      if (hasPeach) {
+        // askForCard 内部的 resolve 逻辑里，我们只处理了打出牌，没处理吃桃回血
+        // 所以这里需要手动补一下回血逻辑，或者在 respondCard 里处理
+        // 为了简单，我们假设 askForCard 返回 true 时，牌已经打出去了
+
+        // 吃桃回血
+        dyingPlayer.health.recover(1);
+        logger.add(
+          logger.player(dyingPlayer),
+          " 濒死回复至 ",
+          `${dyingPlayer.health.current}点`
+        );
+      } else {
+        // 没桃/放弃治疗，跳出循环
+        break;
+      }
+    }
+
+    return dyingPlayer.health.current > 0;
+  }
+
+  // 结算死亡
+  handleDeath(deadPlayer: Player, killer?: Player) {
+    logger.add(logger.player(deadPlayer), " 阵亡了！");
+
+    // 简单判定输赢
+    if (deadPlayer === this.me) {
+      this.winner = "吕布 (电脑)"; // 假设敌人是吕布
+    } else {
+      this.winner = "你";
+    }
   }
 }
 

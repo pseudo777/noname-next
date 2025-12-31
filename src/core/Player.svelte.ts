@@ -3,6 +3,7 @@ import { Health } from "./modules/Health.svelte";
 import type { CharacterDef, DamageContext, CardDef, Suit } from "./types/api";
 import { modManager } from "./ModManager";
 import { logger } from "./Logger.svelte";
+import { game } from "./Game.svelte"; // 引入 game 单例
 
 export class Player {
   uid = Math.random().toString(36).slice(2);
@@ -42,18 +43,13 @@ export class Player {
     );
   }
 
-  // --- 核心逻辑升级 ---
-
   // 现在的 damage 不再直接扣血，而是先跑一遍 Hook
-  damage(amount: number = 1) {
+  async damage(amount: number = 1) {
     // 1. 构建上下文 (Context)
     const ctx: DamageContext = {
       target: this,
       amount: amount,
     };
-
-    // --- 添加这行调试代码 ---
-    console.log(`[Debug] 准备扣血，当前技能数: ${this.skills.length}`);
 
     // 2. 遍历自己的所有技能，看看有没有要拦截的
     // (在完整引擎中，这里还会遍历装备、场上其他人的技能)
@@ -74,6 +70,13 @@ export class Player {
         { text: `${ctx.amount}点`, type: "damage" },
         " 伤害"
       );
+      // --- 新增：濒死检测 ---
+      if (this.health.current <= 0) {
+        const rescued = await game.handleDying(this);
+        if (!rescued) {
+          game.handleDeath(this);
+        }
+      }
     } else {
       logger.add(logger.player(this), " 的伤害被防止了");
     }
