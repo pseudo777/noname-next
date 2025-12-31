@@ -5,6 +5,7 @@ import path from "path";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [svelte()],
+  base: "/noname-next/",
   resolve: {
     alias: {
       "@core": path.resolve(__dirname, "./src/core"),

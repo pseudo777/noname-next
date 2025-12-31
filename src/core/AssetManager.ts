@@ -7,6 +7,10 @@ const BASE_URL = import.meta.env.DEV
   ? "/assets"
   : "https://your-cdn.com/assets";
 
+// 1. 配置你的 CDN 前缀
+// 请替换成你自己的用户名和资源仓库名
+const CDN_PREFIX = "https://cdn.jsdelivr.net/gh/pseudo777/noname-assets@main";
+
 export const assetManager = {
   /**
    * 获取通用的资源 URL
@@ -14,7 +18,16 @@ export const assetManager = {
   getUrl(path: string): string {
     // 移除开头多余的斜杠
     const cleanPath = path.startsWith("/") ? path.slice(1) : path;
-    return `${BASE_URL}/${cleanPath}`;
+    // 🌟 核心判断：
+    // 如果是生产环境 (import.meta.env.PROD 为 true)，走 CDN
+    // 如果是开发环境 (bun dev)，依然走本地 public 目录
+    if (import.meta.env.PROD) {
+      return `${CDN_PREFIX}/${cleanPath}`;
+    } else {
+      // 本地开发，依然使用 /assets/...
+      // 注意：这里的前提是你本地 public/assets 下还有图片用于测试
+      return `/assets/${cleanPath}`;
+    }
   },
 
   /**
