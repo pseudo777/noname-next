@@ -108,3 +108,7 @@ dist
 !.vscode/extensions.json
 !.vscode/launch.json
 !.vscode/settings.json
+
+# Ignore assets
+public/assets/
+# 如果你想忽略整个 assets 文件夹，直接写 public/assets/
