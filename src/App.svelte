@@ -1,252 +1,225 @@
 <script lang="ts">
-  import { Player } from '@core/Player.svelte';
+  import { game } from '@core/Game.svelte';
   import { modManager } from '@core/ModManager';
   import { StandardPack } from '@mods/standard';
   import PlayerAvatar from './components/PlayerAvatar.svelte';
   import Card from './components/Card.svelte';
-  import type { CardDef } from '@core/types/api';
   import GameLog from './components/GameLog.svelte';
-  import { logger } from '@core/Logger.svelte';
-  
-  // 1. 游戏启动时，注册 Mod
-  // 在真实引擎中，这会在 main.ts 或 boot.ts 里执行
-  modManager.register(StandardPack);
+  import type { CardDef } from '@core/types/api';
 
-  // 2. 获取所有武将列表供选择
+  // 初始化 Mod
+  modManager.register(StandardPack);
   const charList = modManager.getAllCharacters();
 
-  // 3. 当前选中的武将 (初始为空)
-  let currentPlayer = $state<Player | null>(null);
+  // --- 状态管理 ---
+  let isSelectingChar = $state(true); // 是否在选将界面
+  let selectedIds = $state(new Set<string>()); // 选中的手牌
 
-  // 选人逻辑
-  function selectCharacter(id: string) {
-    const def = modManager.getCharacter(id);
-    if (def) {
-      // 通过配置创建武将！
-      currentPlayer = new Player(def);
-    }
+  // 新增：是否处于“选择目标”状态
+  let isTargetingMode = $state(false);
+
+  // 选将开始游戏
+  function startGame(myCharId: string) {
+      const myDef = modManager.getCharacter(myCharId);
+      // 随便给安排一个敌人 (吕布)
+      const enemyDef = modManager.getCharacter("lvbu") || charList[0];
+      
+      if (myDef && enemyDef) {
+          game.start(myDef, enemyDef);
+          isSelectingChar = false;
+      }
   }
 
+  // 点击“出牌”按钮
+  function handleUseCardBtn() {
+      if (selectedIds.size === 0) return;
+      
+      const cardId = Array.from(selectedIds)[0];
+      const card = game.me.hand.find(c => c.id === cardId);
+      
+      if (!card) return;
 
-  // --- 交互状态管理 ---
-  // 使用 Set 存储被选中的卡牌 ID
-  let selectedIds = $state(new Set<string>());
-
-  // 切换选中状态
-  function toggleCard(card: CardDef) {
-    if (selectedIds.has(card.id)) {
-      selectedIds.delete(card.id);
-    } else {
-      // 简单起见，这里先做单选模式 (如果想多选，就去掉这行 clear)
-      selectedIds.clear(); 
-      selectedIds.add(card.id);
-    }
-    // 触发 Set 的响应式更新 (Svelte 5 的 Set 需要重新赋值或使用特殊方法，这里简单用重新赋值触发)
-    selectedIds = new Set(selectedIds);
+      // 如果是【杀】，进入目标选择模式
+      if (card.name === '杀') {
+          isTargetingMode = true; // <--- 开启选择模式
+          console.log("请选择目标...");
+      } else {
+          // 其他牌直接用
+          game.useCard(card.id);
+          selectedIds.clear();
+          selectedIds = new Set(selectedIds); // 触发更新
+      }
   }
 
-  // 模拟“出牌”逻辑
-  function useCard() {
-    if (selectedIds.size === 0) return;
+  // 点击某个玩家头像 (作为目标)
+  function handlePlayerClick(targetUid: string) {
+      // 只有在选择模式下，点击头像才有效
+      if (isTargetingMode) {
+          const cardId = Array.from(selectedIds)[0];
+          
+          // 执行出牌逻辑
+          game.useCard(cardId, targetUid);
+          
+          // 重置状态
+          isTargetingMode = false;
+          selectedIds.clear();
+          selectedIds = new Set(selectedIds);
+      }
+  }
 
-    // 1. 找到被选中的牌
-    const cardsToUse = currentPlayer!.hand.filter(c => selectedIds.has(c.id));
-    const card = cardsToUse[0]; // 暂时只处理一张
-    // --- 记录日志 ---
-    logger.add(
-        logger.player(currentPlayer!), 
-        " 使用了 ", 
-        logger.card(card.name)
-    );
-
-    // console.log(`[Game] 玩家使用了卡牌: ${card.name}`);
-
-    // 2. 简单的卡牌效果模拟 (实际应该走 CardLogic 模块)
-    if (card.name === '桃') {
-        currentPlayer!.health.recover(1);
-    } else if (card.name === '杀') {
-        // 自杀测试 (模拟指向自己)
-        currentPlayer!.damage(1);
-    }
-
-    // 3. 弃牌 (从手牌移除)
-    // 利用 filter 生成新数组
-    currentPlayer!.hand = currentPlayer!.hand.filter(c => c.id !== card.id);
-    
-    // 4. 清空选中
-    selectedIds.clear();
-    selectedIds = new Set(selectedIds);
+  // 取消选择
+  function cancelTargeting() {
+      isTargetingMode = false;
   }
 </script>
 
 <main>
-  <h1>无名杀重构 - 选将测试</h1>
-
-  {#if !currentPlayer}
+  {#if isSelectingChar}
     <div class="lobby">
-      <h2>请选择一名武将:</h2>
-      <div class="char-grid">
-        {#each charList as char}
-          <button onclick={() => selectCharacter(char.id)}>
-            {char.name} ({char.country}) <br>
-            <small>体力: {char.maxHp}</small>
-          </button>
-        {/each}
-      </div>
+        <h2>请选择你的武将:</h2>
+        <div class="char-grid">
+          {#each charList as char}
+            <button onclick={() => startGame(char.id)}>{char.name}</button>
+          {/each}
+        </div>
     </div>
-  
   {:else}
-  <div class="battle-container">
-    <div class="arena">
-      <button class="back-btn" onclick={() => currentPlayer = null}>← 返回选将</button>
-      
-      <div class="card">
-        <div class="player-header">
-            <PlayerAvatar player={currentPlayer} />
-            
-            <div class="info-column">
-                <h2>{currentPlayer.name}</h2>
-                <div class="status">
-                    <span class="hp" style:color={currentPlayer.health.current < 2 ? 'red' : 'green'}>
-                         {'❤'.repeat(currentPlayer.health.current)} 
-                         <small>({currentPlayer.health.current}/{currentPlayer.health.max})</small>
-                    </span>
+    <div class="battle-container">
+        <div class="arena">
+            <div class="enemies-row">
+                {#each game.players.filter(p => p !== game.me) as enemy}
+                    <div 
+                        class="enemy-slot" 
+                        class:valid-target={isTargetingMode}
+                        onclick={() => handlePlayerClick(enemy.uid)}
+                        role="button"
+                        tabindex="0"
+                    >
+                        <PlayerAvatar player={enemy} />
+                        <div class="card-count">🎴 {enemy.hand.length}</div>
+                    </div>
+                {/each}
+            </div>
+
+            <div class="middle-zone">
+                {#if isTargetingMode}
+                    <div class="guide-text">请选择一名目标...</div>
+                    <button class="cancel-btn" onclick={cancelTargeting}>取消</button>
+                {/if}
+            </div>
+
+            <div class="my-zone">
+                <div class="player-header">
+                    <div onclick={() => handlePlayerClick(game.me.uid)} role="button" tabindex="0">
+                        <PlayerAvatar player={game.me} />
+                    </div>
+                    
+                    <div class="status-box">
+                         <h2>{game.me.name}</h2>
+                         <div class="hp">❤ {game.me.health.current}</div>
+                    </div>
                 </div>
-                <div class="skills-area">
-                    {#each currentPlayer.skills as skill}
-                        <div class="skill-tag" title={skill.description}>{skill.name}</div>
-                    {/each}
+
+                <div class="hand-area">
+                    <div class="cards-list">
+                      {#each game.me.hand as card (card.id)}
+                        <Card 
+                          {card} 
+                          selected={selectedIds.has(card.id)}
+                          onclick={() => {
+                              // 选牌逻辑 (同之前)
+                              if (selectedIds.has(card.id)) selectedIds.delete(card.id);
+                              else { selectedIds.clear(); selectedIds.add(card.id); }
+                              selectedIds = new Set(selectedIds);
+                          }}
+                        />
+                      {/each}
+                    </div>
+                </div>
+
+                <div class="controls">
+                    <button onclick={() => game.me.drawCard()}>摸牌</button>
+                    <button 
+                        class="use-btn"
+                        disabled={selectedIds.size === 0}
+                        onclick={handleUseCardBtn}
+                    >
+                        {isTargetingMode ? '选择目标中...' : '出牌'}
+                    </button>
                 </div>
             </div>
         </div>
 
-        <hr/>
-
-        <div class="hand-area">
-          <div class="cards-list">
-            {#each currentPlayer.hand as card (card.id)}
-              <Card 
-                {card} 
-                selected={selectedIds.has(card.id)}
-                onclick={() => toggleCard(card)}
-              />
-            {/each}
-          </div>
-      </div>
-
-      <div class="controls">
-          <button onclick={() => currentPlayer?.drawCard()}>摸牌</button>
-          
-          <button 
-            onclick={useCard} 
-            disabled={selectedIds.size === 0}
-            class="use-btn"
-          >
-            出牌 {selectedIds.size > 0 ? `(${selectedIds.size})` : ''}
-          </button>
-      </div>
-      </div>
-    </div>
-    <div class="sidebar">
-            <h3>战斗记录</h3>
-            <div class="log-wrapper">
-                <GameLog />
-            </div>
+        <div class="sidebar">
+            <GameLog />
         </div>
     </div>
   {/if}
 </main>
 
 <style>
-  /* 简单样式 */
-  .char-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-width: 400px; }
-  .char-grid button { padding: 20px; font-size: 1.1em; cursor: pointer; }
-  .back-btn { margin-bottom: 20px; }
-  .hp { font-weight: bold; }
-  
-  .skill-tag {
-    background: linear-gradient(45deg, #FFD700, #FFA500);
-    color: #333;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.9em;
-    font-weight: bold;
-    display: inline-block;
-    margin-right: 5px;
-    cursor: help;
-    box-shadow: 1px 1px 3px rgba(0,0,0,0.2);
+    /* ... 基础布局同上一次 ... */
+    .battle-container { display: flex; height: 100vh; max-width: 1200px; margin: 0 auto; gap: 20px;}
+    .arena { flex: 3; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; }
+    .sidebar { flex: 1; background: #222; margin: 20px 0; border-radius: 8px; }
+
+    /* 敌人区域 */
+    .enemies-row { display: flex; justify-content: center; gap: 20px; height: 180px; }
+    
+    .enemy-slot { 
+        position: relative; transition: transform 0.2s; border-radius: 8px;
+    }
+    /* 目标选择模式下的高亮 */
+    .enemy-slot.valid-target {
+        cursor: crosshair;
+        box-shadow: 0 0 15px #ff4d4d;
+        transform: scale(1.05);
+        animation: pulse 1s infinite;
+    }
+
+    .card-count {
+        position: absolute; right: -10px; bottom: 10px;
+        background: #333; color: white; padding: 2px 8px; border-radius: 10px;
+        font-size: 0.8em;
+    }
+
+    .middle-zone { 
+        flex: 1; display: flex; flex-direction: column; 
+        align-items: center; justify-content: center; 
+    }
+    .guide-text { font-size: 1.5em; font-weight: bold; color: #ff4d4d; margin-bottom: 10px; text-shadow: 0 0 5px black;}
+
+    .my-zone { background: rgba(0,0,0,0.05); padding: 10px; border-radius: 12px; }
+    .player-header { display: flex; gap: 15px; margin-bottom: 10px; }
+    .hp { color: green; font-weight: bold; font-size: 1.2em; }
+    
+    .cancel-btn { background: #666; color: white; }
+
+    @keyframes pulse {
+        0% { box-shadow: 0 0 10px #ff4d4d; }
+        50% { box-shadow: 0 0 25px #ff0000; }
+        100% { box-shadow: 0 0 10px #ff4d4d; }
+    }
+    
+    /* 简单的选将样式 */
+    .lobby { text-align: center; padding-top: 50px; }
+    .char-grid button { font-size: 1.2em; padding: 15px 30px; margin: 10px; cursor: pointer; }
+    .cards-list {
+    display: flex;
+    flex-direction: row; /* 强制横向排列 */
+    flex-wrap: nowrap;   /* 禁止换行 (手牌多了就出现滚动条) */
+    align-items: center; /* 垂直居中 */
+    gap: -30px;          /* 让牌叠在一起，负值越大叠得越紧 */
+    padding: 10px 20px;  /* 给上面留点浮动空间 */
 }
-.player-header {
-      display: flex;
-      gap: 20px;
-      margin-bottom: 10px;
-  }
-  .info-column {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      gap: 5px;
-  }
-  .hand-area {
-      margin-top: 20px;
-      min-height: 140px;
-      padding: 10px;
-      background: #e0e0e0;
-      border-radius: 8px;
-      overflow-x: auto; /* 手牌多了可以滚动 */
-  }
-  .cards-list {
-      display: flex;
-      gap: -20px; /* 让牌稍微叠在一起，像真的一样 */
-      padding-top: 20px; /* 给浮动留空间 */
-  }
-  /* 为了让鼠标悬停时容易选中，可以给卡牌加个 hover 展开效果 */
-  .cards-list:hover {
-      gap: 5px;
-  }
-  
-  .use-btn {
-      background: #D03B31;
-      color: white;
-      font-weight: bold;
-      padding: 10px 30px;
-      font-size: 1.1em;
-  }
-  .use-btn:disabled {
-      background: #ccc;
-      cursor: not-allowed;
-  }
 
-  .battle-container {
-      display: flex;
-      gap: 20px;
-      width: 100%;
-      max-width: 900px; /* 稍微加宽一点 */
-      height: 600px;
-  }
-
-  .arena {
-      flex: 2; /* 战场占 2/3 */
-      /* 这里的样式可以沿用之前的 .arena 样式，或者稍微调整 */
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-  }
-
-  .sidebar {
-      flex: 1; /* 日志占 1/3 */
-      display: flex;
-      flex-direction: column;
-      background: #222;
-      padding: 10px;
-      border-radius: 8px;
-      color: white;
-  }
-  
-  .log-wrapper {
-      flex: 1; /* 填满剩余高度 */
-      overflow: hidden;
-  }
-
-  h3 { margin: 0 0 10px 0; border-bottom: 1px solid #555; padding-bottom: 5px; }
+/* 顺便优化一下外层容器，确保能滚动 */
+.hand-area {
+    width: 100%;
+    overflow-x: auto; /* 允许横向滚动 */
+    overflow-y: hidden;
+    min-height: 150px;
+    background: rgba(0,0,0,0.1); /* 给个背景色方便调试 */
+    border-radius: 8px;
+}
 </style>

@@ -5,6 +5,7 @@ import { modManager } from "./ModManager";
 import { logger } from "./Logger.svelte";
 
 export class Player {
+  uid = Math.random().toString(36).slice(2);
   id: string;
   name = $state("");
   country = $state("");
