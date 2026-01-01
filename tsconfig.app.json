@@ -27,7 +27,9 @@
     "paths": {
       "@core/*": ["src/core/*"],
       "@mods/*": ["src/mods/*"],
-      "@assets/*": ["src/assets/*"]
+      "@assets/*": ["src/assets/*"],
+      "$lib": ["./src/lib"],
+      "$lib/*": ["./src/lib/*"]
     }
   },
   "include": ["src/**/*.ts", "src/**/*.js", "src/**/*.svelte"]
