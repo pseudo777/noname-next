@@ -1,276 +1,203 @@
-// src/core/Game.svelte.ts
 import { Player } from "./Player.svelte";
-import type { CharacterDef } from "./types/api";
 import { logger } from "./Logger.svelte";
+import { cardManager } from "./managers/CardManager";
+import type { CardInstance } from "./api/CardInstance";
+import type { CharacterDefinition } from "./types/core";
 
-// 简单的延时函数，让AI操作看起来像真人在思考
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// 定义一个交互请求的结构
 interface CardRequest {
-  playerId: string; // 谁需要操作
-  cardName: string; // 需要出什么牌 (比如 "闪")
-  resolve: (result: boolean) => void; // 也就是 Promise 的 resolve
+  playerId: string;
+  cardName: string;
+  resolve: (b: boolean) => void;
 }
 
 export class Game {
-  // 玩家列表
   players = $state<Player[]>([]);
-  winner = $state<string | null>(null); // 新增：胜利者
+  deck = $state<CardInstance[]>([]);
+  discardPile: CardInstance[] = [];
 
-  // 当前操作的玩家索引
   currentTurnUid = $state("");
-
-  // 新增：当前的交互请求
   pendingRequest = $state<CardRequest | null>(null);
+  winner = $state<string | null>(null);
 
-  // 谁是主视角（就是屏幕前的你）
-  // $derived: 假设第一个玩家总是“我”
   me = $derived(this.players[0]);
-  // 获取当前回合的玩家对象
-  get currentTurnPlayer() {
+  get currentPlayer() {
     return this.players.find((p) => p.uid === this.currentTurnUid);
   }
 
-  /**
-   * 初始化一局游戏
-   * @param myCharDef 我选的武将
-   * @param enemyCharDef 敌人选的武将
-   */
-  start(myCharDef: CharacterDef, enemyCharDef: CharacterDef) {
-    // 创建我
-    const p1 = new Player(myCharDef);
-    // 创建敌人
-    const p2 = new Player(enemyCharDef);
+  // 启动游戏
+  start(p1Def: CharacterDefinition, p2Def: CharacterDefinition) {
+    this.deck = cardManager.buildDeck();
+    this.players = [new Player(p1Def), new Player(p2Def)];
 
-    // 初始手牌 (作弊: 给每人发 4 张)
-    for (let i = 0; i < 4; i++) {
-      p1.drawCard();
-      p2.drawCard();
-    }
+    // 初始发牌
+    this.players.forEach((p) => p.drawCard(4));
+    logger.add("游戏开始");
 
-    this.players = [p1, p2];
-    // 游戏开始，我先手
-    this.currentTurnUid = p1.uid;
-
-    logger.add("游戏开始！");
-    this.startTurn(p1);
+    // 开启第一回合
+    this.startTurn(this.players[0]);
   }
 
-  // --- 回合流程控制 ---
+  // 从牌堆抽牌
+  drawCardsFromDeck(n: number): CardInstance[] {
+    const res: CardInstance[] = [];
+    for (let i = 0; i < n; i++) {
+      if (this.deck.length === 0) {
+        if (this.discardPile.length === 0) break;
+        // 简单的洗牌重置
+        this.deck = [...this.discardPile].sort(() => Math.random() - 0.5);
+        this.discardPile = [];
+        logger.add("洗牌");
+      }
+      res.push(this.deck.pop()!);
+    }
+    return res;
+  }
 
+  // 开启回合
   async startTurn(player: Player) {
-    logger.add(`\n--- 轮到 [${player.name}] 的回合 ---`);
-
-    // 1. 摸牌阶段
+    this.currentTurnUid = player.uid;
+    logger.add(`\n--- ${player.name} 回合 ---`);
     await sleep(500);
-    player.drawCard();
-    player.drawCard();
-    logger.add(logger.player(player), " 摸了两张牌");
 
-    // 2. 出牌阶段
-    // 如果是电脑(不是我)，就自动行动
+    // 摸牌阶段
+    await player.drawCard(2);
+
+    // 出牌阶段
     if (player !== this.me) {
       await this.aiAct(player);
     }
+    // 如果是玩家自己，就停在这里，等待 UI 操作（出牌或点击结束回合）
   }
 
+  // ✅ 修复：新增 nextTurn 方法供 UI 调用
   async nextTurn() {
-    // 找到下一个人
+    if (this.winner) return;
+
     const currentIdx = this.players.findIndex(
       (p) => p.uid === this.currentTurnUid
     );
     const nextIdx = (currentIdx + 1) % this.players.length;
     const nextPlayer = this.players[nextIdx];
 
-    this.currentTurnUid = nextPlayer.uid;
     await this.startTurn(nextPlayer);
   }
 
-  // --- 简单 AI 逻辑 ---
-
+  // AI 行动逻辑
   async aiAct(ai: Player) {
-    await sleep(1000); // 假装思考
+    await sleep(800);
+    const kill = ai.hand.find((c) => c.name === "杀");
 
-    // 1. 找杀
-    const killCard = ai.hand.find((c) => c.name === "杀");
-    const target = this.me; // 目标永远是我
-
-    if (killCard) {
-      // 这样 AI 也会触发 askForCard，从而激活你的 UI 响应窗口
-      console.log("AI 决定出杀...");
-      await this.useCard(killCard.id, target.uid);
+    if (kill) {
+      // 简单 AI：有杀就打
+      await this.useCard(kill.id, this.me.uid);
     } else {
-      logger.add(logger.player(ai), " 微微一笑，没有出牌");
+      logger.add(logger.player(ai), " 结束了回合");
     }
 
-    await sleep(1000);
-    // AI 回合结束
-    this.nextTurn();
+    await sleep(500);
+    this.nextTurn(); // AI 行动结束后自动切回合
   }
 
-  /**
-   * 核心逻辑：使用卡牌
-   * @param cardId 使用的卡牌ID
-   * @param targetId 目标的ID (如果是杀，必须有目标)
-   */
-  async useCard(cardId: string, targetId?: string) {
-    const user = this.currentTurnPlayer;
+  // 使用卡牌
+  async useCard(cardId: string, targetUid?: string) {
+    const user = this.currentPlayer;
     if (!user) return;
 
-    // ... 找牌逻辑 ...
     const card = user.hand.find((c) => c.id === cardId);
     if (!card) return;
 
-    // ... 找目标逻辑 ...
-    let target: Player | undefined;
-    if (targetId) target = this.players.find((p) => p.uid === targetId);
+    const targets = targetUid
+      ? this.players.filter((p) => p.uid === targetUid)
+      : [];
 
-    // 弃牌 (先扣牌，再结算效果)
-    user.hand = user.hand.filter((c) => c.id !== cardId);
-
-    // --- 逻辑分支 ---
-    if (card.name === "杀") {
-      if (!target) return;
-
-      logger.add(
-        logger.player(user),
-        " 对 ",
-        logger.player(target),
-        " 使用了 ",
-        logger.card(card.name)
-      );
-
-      // 🌟 关键点：异步询问目标是否出闪 🌟
-      // 只有当 askForCard 返回 false (没出闪) 时，才造成伤害
-      const hasShan = await this.askForCard(target, "闪");
-
-      if (hasShan) {
-        logger.add(logger.card("杀"), " 被抵消了");
-      } else {
-        await target.damage(1);
-      }
-    } else if (card.name === "桃") {
-      // ... 桃的逻辑 ...
-      user.health.recover(1);
-      logger.add(logger.player(user), " 吃了一个 ", logger.card("桃"));
+    if (!card.def.canUse(this, user, targets)) {
+      logger.add("不可用");
+      return;
     }
 
-    // 告诉 UI 刷新一下选中状态 (可选)
+    // 扣除手牌
+    user.hand = user.hand.filter((c) => c.id !== cardId);
+    // 进入弃牌堆
+    this.discardPile.push(card);
+    // 执行逻辑
+    await card.def.execute(this, user, targets);
   }
 
-  // --- 核心交互方法 ---
-
-  /**
-   * 询问某人打出一张牌
-   * @param player 询问的对象
-   * @param cardName 需要打出的牌名
-   * @returns Promise<boolean> true=打出了, false=取消/没打
-   */
-  async askForCard(player: Player, cardName: string): Promise<boolean> {
-    logger.add(`等待 [${player.name}] 打出 【${cardName}】...`);
-
-    // 1. 如果是 AI，直接由 AI 决定 (目前简写为：有就出)
-    if (player !== this.me) {
-      await new Promise((r) => setTimeout(r, 1000)); // 假装思考
-      const card = player.hand.find((c) => c.name === cardName);
-      if (card) {
-        // AI 出牌
-        player.hand = player.hand.filter((c) => c.id !== card.id);
-        logger.add(logger.player(player), " 打出了 ", logger.card(cardName));
+  // 请求打出卡牌（响应）
+  async askForCard(p: Player, cardName: string): Promise<boolean> {
+    if (p !== this.me) {
+      // AI 简单响应
+      await sleep(500);
+      const c = p.hand.find((c) => c.name === cardName);
+      if (c) {
+        p.hand = p.hand.filter((x) => x.id !== c.id);
+        this.discardPile.push(c);
+        logger.add(logger.player(p), ` 打出了 ${cardName}`);
         return true;
-      } else {
-        return false;
       }
+      return false;
     }
-
-    // 2. 如果是玩家，挂起 Promise，等待 UI 响应
-    return new Promise<boolean>((resolve) => {
+    // 玩家响应：挂起等待 UI
+    return new Promise((resolve) => {
       this.pendingRequest = {
-        playerId: player.uid,
-        cardName: cardName,
-        // 这里封装一下 resolve，处理完后顺便清理状态
-        resolve: (result) => {
+        playerId: p.uid,
+        cardName,
+        resolve: (b) => {
           this.pendingRequest = null;
-          resolve(result);
+          resolve(b);
         },
       };
     });
   }
 
-  /**
-   * 玩家在 UI 上点击了响应
-   * @param cardId 选中的卡牌ID (如果为空表示点击了取消)
-   */
-  respondCard(cardId?: string) {
+  // 响应操作（UI 调用）
+  respond(cardId?: string) {
     if (!this.pendingRequest) return;
 
-    const player = this.me; // 肯定是玩家在操作
-
     if (cardId) {
-      // 校验牌对不对
-      const card = player.hand.find((c) => c.id === cardId);
-      if (card && card.name === this.pendingRequest.cardName) {
-        // 扣掉这张牌
-        player.hand = player.hand.filter((c) => c.id !== cardId);
-        logger.add(logger.player(player), " 打出了 ", logger.card(card.name));
-        // 完成 Promise，返回 true
+      const c = this.me.hand.find((x) => x.id === cardId);
+      // 检查卡牌名是否匹配（这里用 name 也就是中文名匹配）
+      if (c && c.name === this.pendingRequest.cardName) {
+        this.me.hand = this.me.hand.filter((x) => x.id !== cardId);
+        this.discardPile.push(c);
         this.pendingRequest.resolve(true);
         return;
       }
     }
-
-    // 选择了取消，或卡牌不对
-    logger.add(logger.player(player), " 选择不打出");
+    // 取消/不打出
     this.pendingRequest.resolve(false);
   }
 
-  /**
-   * 处理濒死逻辑
-   * @param dyingPlayer 濒死的角色
-   * @returns boolean 是否被救活
-   */
-  async handleDying(dyingPlayer: Player): Promise<boolean> {
-    logger.add(logger.player(dyingPlayer), " 进入濒死状态！");
-
-    // 简单逻辑：只询问濒死者自己是否有桃 (完整版需要询问全场)
-    // 循环询问，直到体力 > 0 或者没桃了/放弃了
-    while (dyingPlayer.health.current <= 0) {
-      const hasPeach = await this.askForCard(dyingPlayer, "桃");
-
-      if (hasPeach) {
-        // askForCard 内部的 resolve 逻辑里，我们只处理了打出牌，没处理吃桃回血
-        // 所以这里需要手动补一下回血逻辑，或者在 respondCard 里处理
-        // 为了简单，我们假设 askForCard 返回 true 时，牌已经打出去了
-
-        // 吃桃回血
-        dyingPlayer.health.recover(1);
-        logger.add(
-          logger.player(dyingPlayer),
-          " 濒死回复至 ",
-          `${dyingPlayer.health.current}点`
-        );
+  // 濒死处理
+  async handleDying(p: Player): Promise<boolean> {
+    logger.add(logger.player(p), " 进入濒死状态！");
+    while (p.hp.current <= 0) {
+      // 简化：只向濒死者自己求桃
+      const saved = await this.askForCard(p, "桃");
+      if (saved) {
+        p.recover(1);
       } else {
-        // 没桃/放弃治疗，跳出循环
-        break;
+        break; // 没桃了，死亡
       }
     }
 
-    return dyingPlayer.health.current > 0;
+    if (p.hp.current <= 0) {
+      this.handleDeath(p);
+      return false;
+    }
+    return true;
   }
 
-  // 结算死亡
-  handleDeath(deadPlayer: Player, killer?: Player) {
-    logger.add(logger.player(deadPlayer), " 阵亡了！");
-
-    // 简单判定输赢
-    if (deadPlayer === this.me) {
-      this.winner = "吕布 (电脑)"; // 假设敌人是吕布
+  handleDeath(p: Player) {
+    logger.add(logger.player(p), " 阵亡了");
+    if (p === this.me) {
+      this.winner = "AI";
     } else {
-      this.winner = "你";
+      this.winner = "You";
     }
   }
 }
 
-// 导出全局单例
 export const game = new Game();

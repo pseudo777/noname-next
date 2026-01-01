@@ -1,82 +1,94 @@
 <script lang="ts">
-    import type { CardDef, Suit} from '@core/types/api';
-    import { cn } from "$lib/utils";
+  import type { CardInstance } from "@core/api/CardInstance";
+  import { cn } from "$lib/utils";
+  import { Card as UiCard, CardContent } from "$lib/components/ui/card";
 
+  let { card, className, onclick } = $props<{ 
+    card: CardInstance;
+    className?: string;
+    onclick?: () => void;
+  }>();
 
-    interface Props {
-        card: CardDef;
-        selected?: boolean;
-        onclick?: () => void;
+  // 映射表
+  const suitMap: Record<string, string> = {
+    spade: "♠", heart: "♥", club: "♣", diamond: "♦", none: ""
+  };
+  const pointMap: Record<number, string> = {
+    1: "A", 11: "J", 12: "Q", 13: "K"
+  };
+
+  let isRed = $derived(card.isRed);
+  // 颜色逻辑：红色牌用红色，黑色牌用深灰色
+  let textColor = $derived(isRed ? "text-red-600" : "text-slate-900");
+  
+  let bgClass = $derived.by(() => {
+    switch (card.type) {
+      case 'basic': return "bg-slate-50 hover:bg-white";
+      case 'scroll': return "bg-amber-50 hover:bg-amber-100";
+      case 'equip': return "bg-sky-50 hover:bg-sky-100";
+      default: return "bg-white";
     }
+  });
 
-    // 接收参数
-    let { card, selected = false, onclick }: Props = $props();
+  let displayPoint = $derived(pointMap[card.point] || card.point.toString());
 
-    // 计算属性：点数和花色
-    let pointStr = $derived(card.point > 10 
-        ? {11:'J', 12:'Q', 13:'K'}[card.point] 
-        : (card.point === 1 ? 'A' : card.point.toString())
-    );
+  function handleKeydown(e: KeyboardEvent) {
+    if (onclick && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      onclick();
+    }
+  }
+</script>
 
-    // 辅助函数：根据花色决定颜色
-    let isRed = $derived(card.suit === 'heart' || card.suit === 'diamond');
-
-    // 定义一个类型明确的映射表
-    // Record<Suit, string> 意思是：Key 必须是 Suit 类型，Value 是 string
-    const suitMap: Record<Suit, string> = {
-        spade: '♠', 
-        heart: '♥', 
-        club: '♣', 
-        diamond: '♦'
-    };
-
-    // 使用映射表
-    const suitSymbol = $derived(suitMap[card.suit as Suit]);
-    
-    // 同样的逻辑处理点数
-    // const pointMap: Record<number, string> = {
-    //     1: 'A', 11: 'J', 12: 'Q', 13: 'K'
-    // };
-    // 如果 card.point 不在 map 里（比如 2-10），回退显示原数字
-    // const pointStr = $derived(pointMap[card.point] || card.point.toString());
-
-
-    // 新增：键盘处理函数
-    // function handleKeydown(e: KeyboardEvent) {
-    //     // 如果按下回车或空格，也触发点击逻辑
-    //     if (e.key === 'Enter' || e.key === ' ') {
-    //         e.preventDefault(); // 防止空格键导致页面滚动
-    //         onclick();
-    //     }
-    // }
-
-
-
-</script>    
- <div 
-    class={cn(
-        "w-24 h-36 border rounded-lg shadow-sm relative flex items-center justify-center cursor-pointer transition-all duration-200 select-none bg-white",
-        // 基础文字颜色
-        isRed ? "text-red-600" : "text-slate-950",
-        // 选中状态：上浮更多，加粗边框，加阴影
-        selected && "border-blue-500 ring-2 ring-blue-200 -translate-y-6 shadow-xl z-10"
-    )}
-    onclick={onclick}
+<div 
+    class="group relative transition-transform hover:-translate-y-4 duration-200 outline-none" 
     role="button"
     tabindex="0"
-    onkeydown={(e) => e.key === 'Enter' && onclick?.()}
+    {onclick}
+    onkeydown={handleKeydown}
 >
-    <div class="absolute top-1 left-2 flex flex-col items-center leading-none">
-        <span class="text-lg font-bold font-serif">{pointStr}</span>
-        <span class="text-sm">{card.suit}</span>
-    </div>
+    <UiCard class={cn(
+        "w-24 h-36 border-2 select-none cursor-pointer overflow-hidden transition-colors relative p-0",
+        isRed ? "border-red-200" : "border-slate-300",
+        bgClass,
+        className
+    )}>
+        <CardContent class="p-0 w-full h-full relative">
+            
+            <div class={cn(
+                "absolute top-1 left-1 flex flex-col items-center leading-none text-lg font-black font-mono w-6 z-20", 
+                textColor
+            )}>
+                <span>{displayPoint}</span>
+                <span class="text-xl -mt-1">{suitMap[card.suit]}</span>
+            </div>
 
-    <div class="text-xl font-bold writing-vertical-rl font-serif tracking-widest">
-        {card.name}
-    </div>
+            <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <span class={cn(
+                    "text-2xl font-bold font-serif writing-vertical-rl tracking-widest",
+                    textColor // 使用动态颜色
+                )}>
+                    {card.name}
+                </span>
+            </div>
 
-    <div class="absolute bottom-1 right-2 rotate-180 opacity-50 text-sm">
-        {card.suit}
-    </div>
-    
-    </div>
+            <div class="absolute bottom-1 w-full text-[10px] text-center text-slate-400 font-mono uppercase tracking-tighter">
+                {card.type}
+            </div>
+        </CardContent>
+
+        <div class={cn(
+            "absolute -bottom-6 -right-6 text-8xl opacity-[0.08] pointer-events-none select-none font-serif",
+            textColor
+        )}>
+            {suitMap[card.suit]}
+        </div>
+    </UiCard>
+</div>
+
+<style>
+    .writing-vertical-rl {
+        writing-mode: vertical-rl;
+        text-orientation: upright;
+    }
+</style>

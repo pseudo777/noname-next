@@ -1,99 +1,57 @@
-// src/core/Player.svelte.ts
 import { Health } from "./modules/Health.svelte";
-import type { CharacterDef, DamageContext, CardDef, Suit } from "./types/api";
-import { modManager } from "./ModManager";
+import type { CharacterDefinition, SkillDefinition } from "./types/core";
+import type { CardInstance } from "./api/CardInstance";
+import { skillManager } from "./managers/SkillManager";
+import { game } from "./Game.svelte";
 import { logger } from "./Logger.svelte";
-import { game } from "./Game.svelte"; // 引入 game 单例
 
 export class Player {
   uid = Math.random().toString(36).slice(2);
-  id: string;
+  id: string; // Character ID
   name = $state("");
   country = $state("");
-  health: Health;
-  hand = $state<CardDef[]>([]);
+  hp: Health;
 
-  // 存储当前武将拥有的技能对象
-  skills = $state<any[]>([]);
+  hand = $state<CardInstance[]>([]);
+  skills: SkillDefinition[] = [];
 
-  constructor(def: CharacterDef) {
+  constructor(def: CharacterDefinition) {
     this.id = def.id;
     this.name = def.name;
-    this.country = def.country;
-    this.health = new Health(def.maxHp);
+    this.country = def.kingdom;
+    this.hp = new Health(def.maxHp);
 
-    // 初始化技能
-    if (def.skills) {
-      def.skills.forEach((skillId) => {
-        const skill = modManager.getSkill(skillId);
-        // --- 添加这行调试代码 ---
-        console.log(
-          `[Debug] 武将 ${this.name} 尝试加载技能: ${skillId}, 结果:`,
-          skill
-        );
-        if (skill) {
-          this.skills.push(skill);
-        }
-      });
-    }
-    // --- 再加一行确认最终结果 ---
-    console.log(
-      `[Debug] 技能列表:`,
-      this.skills.map((s) => s.name)
-    );
+    // 加载技能
+    def.skills.forEach((sid) => {
+      const s = skillManager.get(sid);
+      if (s) this.skills.push(s);
+    });
   }
 
-  // 现在的 damage 不再直接扣血，而是先跑一遍 Hook
-  async damage(amount: number = 1) {
-    // 1. 构建上下文 (Context)
-    const ctx: DamageContext = {
-      target: this,
-      amount: amount,
-    };
+  async drawCard(n: number) {
+    const cards = game.drawCardsFromDeck(n);
+    this.hand.push(...cards);
+    // logger.add(logger.player(this), ` 摸了 ${n} 张牌`);
+  }
 
-    // 2. 遍历自己的所有技能，看看有没有要拦截的
-    // (在完整引擎中，这里还会遍历装备、场上其他人的技能)
-    for (const skill of this.skills) {
-      if (skill.hooks?.onBeforeDamage) {
-        console.log(`[Engine] 触发技能: ${skill.name}`);
-        // 执行钩子，允许技能修改 ctx
-        skill.hooks.onBeforeDamage(ctx);
-      }
+  async damage(n: number) {
+    if (n <= 0) return;
+    this.hp.damage(n);
+    logger.add(logger.player(this), ` 受到 ${n} 点伤害`);
+
+    // 触发受伤技能
+    for (const s of this.skills) {
+      if (s.onDamage)
+        await s.onDamage({ game, player: this, data: { amount: n } });
     }
 
-    // 3. 结算最终数值
-    if (ctx.amount > 0) {
-      this.health.damage(ctx.amount);
-      logger.add(
-        logger.player(this),
-        " 受到了 ",
-        { text: `${ctx.amount}点`, type: "damage" },
-        " 伤害"
-      );
-      // --- 新增：濒死检测 ---
-      if (this.health.current <= 0) {
-        const rescued = await game.handleDying(this);
-        if (!rescued) {
-          game.handleDeath(this);
-        }
-      }
-    } else {
-      logger.add(logger.player(this), " 的伤害被防止了");
+    if (this.hp.current <= 0) {
+      await game.handleDying(this);
     }
   }
 
-  drawCard() {
-    const names = ["杀", "闪", "桃", "酒"];
-    const suits: Suit[] = ["spade", "heart", "club", "diamond"];
-
-    const newCard: CardDef = {
-      id: Math.random().toString(36).slice(2), // 临时随机ID
-      name: names[Math.floor(Math.random() * names.length)],
-      suit: suits[Math.floor(Math.random() * suits.length)],
-      point: Math.floor(Math.random() * 13) + 1,
-      type: "basic",
-    };
-
-    this.hand.push(newCard);
+  recover(n: number) {
+    this.hp.recover(n);
+    logger.add(logger.player(this), ` 回复了 ${n} 点体力`);
   }
 }

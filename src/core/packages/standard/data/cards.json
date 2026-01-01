@@ -1,0 +1,7 @@
+[
+  { "suit": "spade", "point": 7, "name": "sha" },
+  { "suit": "spade", "point": 8, "name": "sha" },
+  { "suit": "heart", "point": 6, "name": "tao" },
+  { "suit": "diamond", "point": 2, "name": "shan" },
+  { "suit": "club", "point": 12, "name": "wuzhong" }
+]
